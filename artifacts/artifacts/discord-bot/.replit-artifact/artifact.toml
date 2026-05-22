@@ -1,0 +1,13 @@
+kind = "api"
+previewPath = "/"
+title = "Discord Bot"
+version = "1.0.0"
+id = "discord-bot-001"
+
+[[services]]
+localPort = 3000
+name = "Discord Bot Keep-Alive"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/discord-bot run start"
