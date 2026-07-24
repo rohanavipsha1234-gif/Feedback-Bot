@@ -204,7 +204,33 @@ async function handleButtonInteraction(interaction) {
   const messageId = interaction.message.id;
   const session   = sessions.get(messageId);
 
+const messageId = interaction.message.id;
+const session = sessions.get(messageId);
 
+// Make sure this is a valid feedback panel
+if (!session) {
+  await interaction.reply({
+    content: "⚠️ This feedback panel is no longer active.",
+    flags: MessageFlags.Ephemeral,
+  });
+  return true;
+}
+
+// Check if this user has already submitted feedback
+const { hasSubmittedFeedback } = require("../db"); // Adjust path if needed
+
+const alreadySubmitted = await hasSubmittedFeedback(
+  interaction.guildId,
+  interaction.user.id
+);
+
+if (alreadySubmitted) {
+  await interaction.reply({
+    content: "⚠️ You have already submitted feedback for this server.",
+    flags: MessageFlags.Ephemeral,
+  });
+  return true;
+}
 
   // ── Star rating button → open modal ───────────────────────────────────────
   if (customId.startsWith(STAR_BUTTON_PREFIX)) {
