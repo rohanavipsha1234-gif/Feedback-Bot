@@ -196,6 +196,14 @@ async function handleFeedbackCommand(interaction) {
 async function handleButtonInteraction(interaction) {
   const { customId } = interaction;
 
+  // Only handle buttons we own
+  const isOurButton =
+    customId.startsWith(STAR_BUTTON_PREFIX) || customId === SKIP_BUTTON_ID;
+  if (!isOurButton) return false;
+
+  const messageId = interaction.message.id;
+  const session   = sessions.get(messageId);
+
 
 
   // ── Star rating button → open modal ───────────────────────────────────────
