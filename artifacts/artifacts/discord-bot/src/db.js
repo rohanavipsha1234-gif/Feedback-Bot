@@ -33,13 +33,23 @@ async function warmup() {
  * @param {string} userId Discord user ID
  * @returns {Promise<boolean>}
  */
-async function hasUserSubmitted(userId) {
+async function hasSubmittedFeedback(guildId, userId) {
   const result = await pool.query(
-    `SELECT 1 FROM feedback_submissions WHERE user_id = $1 LIMIT 1`,
-    [userId]
+    `SELECT 1
+     FROM feedback_submissions
+     WHERE guild_id = $1
+       AND user_id = $2
+     LIMIT 1`,
+    [guildId, userId]
   );
-  return result.rows.length > 0;
+
+  return result.rowCount > 0;
 }
+
+module.exports = {
+  // ...
+  hasSubmittedFeedback,
+};
 
 /**
  * Delete all feedback submissions for a user.
