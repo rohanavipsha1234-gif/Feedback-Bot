@@ -206,13 +206,7 @@ async function handleButtonInteraction(interaction) {
 
   // ── Ownership check ────────────────────────────────────────────────────────
   // Reject clicks from anyone other than the user who ran /feedback
-  if (!session || session.userId !== interaction.user.id) {
-    await interaction.reply({
-      content: "⚠️ This feedback prompt isn't yours to interact with.",
-      flags:   MessageFlags.Ephemeral,
-    });
-    return true;
-  }
+ 
 
   // ── Star rating button → open modal ───────────────────────────────────────
   if (customId.startsWith(STAR_BUTTON_PREFIX)) {
