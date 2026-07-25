@@ -295,62 +295,51 @@ async function handleButtonInteraction(interaction) {
   }
 
   return false;
-}
-
-async function handleModalSubmit(
-  interaction,
-  feedbackChannelId
-) {
+async function handleModalSubmit(interaction, feedbackChannelId) {
   const { customId } = interaction;
 
   if (!customId.startsWith(MODAL_PREFIX)) {
     return false;
   }
 
+  // Parse modal custom ID
   const payload = customId.substring(MODAL_PREFIX.length);
   const splitIndex = payload.indexOf("_");
 
-  const stars = Number(
-    payload.substring(0, splitIndex)
-  );
+  const stars = Number(payload.substring(0, splitIndex));
 
-  const messageId = payload.substring(splitIndex + 1);
-
-  const reason = interaction.fields.getTextInputValue(
-    REASON_INPUT_ID
-  );
-
+  const reason = interaction.fields.getTextInputValue(REASON_INPUT_ID);
   const user = interaction.user;
 
+  // Acknowledge interaction immediately
   await interaction.deferReply({
     flags: MessageFlags.Ephemeral,
   });
 
-  const alreadySubmitted = await hasSubmittedFeedback(
-    interaction.guild.id,
-    interaction.user.id
-  );
-
-  if (alreadySubmitted) {
-    return interaction.editReply({
-      content:
-        "⚠️ You have already submitted feedback for this server.",
-    });
-  }
-
-  const session = sessions.get(messageId);
-  const originChannelId = session?.channelId ?? null;
-
   try {
-    const feedbackChannel =
-      await interaction.client.channels.fetch(
-        feedbackChannelId
-      );
+    // Prevent duplicate submissions
+    const alreadySubmitted = await hasSubmittedFeedback(
+      interaction.guild.id,
+      user.id
+    );
 
-    if (!feedbackChannel?.isTextBased()) {
-      throw new Error("Feedback channel not found.");
+    if (alreadySubmitted) {
+      return interaction.editReply({
+        content:
+          "⚠️ You have already submitted feedback for this server.",
+      });
     }
 
+    // Fetch feedback channel
+    const feedbackChannel = await interaction.client.channels.fetch(
+      feedbackChannelId
+    );
+
+    if (!feedbackChannel?.isTextBased()) {
+      throw new Error("Feedback channel not found or is not text-based.");
+    }
+
+    // Save feedback and send embed
     await Promise.all([
       saveFeedback(
         user.id,
@@ -369,43 +358,18 @@ async function handleModalSubmit(
           ),
         ],
       }),
-
-      deletePromptMessage(
-        interaction.client,
-        messageId
-      ),
     ]);
 
-    if (originChannelId) {
-      try {
-        const origin =
-          await interaction.client.channels.fetch(
-            originChannelId
-          );
-
-        if (origin?.isTextBased()) {
-          await origin.send({
-            embeds: [
-              buildCompletionEmbed(user),
-            ],
-          });
-        }
-      } catch {}
-    }
-
     await interaction.editReply({
-      content:
-        `✅ Thank you! Your ${STAR_LABELS[stars]} feedback has been recorded.`,
+      content: `✅ Thank you! Your ${STAR_LABELS[stars]} feedback has been recorded.`,
     });
+
   } catch (err) {
-    console.error(
-      "[feedback] Failed to process feedback:",
-      err
-    );
+    console.error("[feedback] Failed to process feedback:", err);
 
     await interaction.editReply({
       content:
-        "⚠️ Something went wrong while saving your feedback.",
+        "⚠️ Something went wrong while saving your feedback. Please try again later.",
     });
   }
 
