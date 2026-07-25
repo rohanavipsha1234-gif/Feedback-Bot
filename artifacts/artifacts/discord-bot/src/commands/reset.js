@@ -2,42 +2,68 @@
  * commands/reset.js
  *
  * Handles the /reset slash command.
- * Admin-only: deletes a mentioned member's feedback submission from the DB
- * so they can submit a new review.
  *
- * Usage: /reset @member
+ * Administrator only.
+ * Removes a member's feedback for the current server,
+ * allowing them to submit feedback again.
  */
 
-const { EmbedBuilder, PermissionFlagsBits, MessageFlags } = require("discord.js");
-const { deleteUserFeedback, hasUserSubmitted } = require("../db");
+const {
+  EmbedBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+} = require("discord.js");
 
-/**
- * Handle the /reset slash command.
- */
+const {
+  deleteUserFeedback,
+  hasSubmittedFeedback,
+} = require("../db");
+
 async function handleResetCommand(interaction) {
-  // Discord enforces the admin-only restriction via default_member_permissions,
-  // but we double-check here as a safety net.
-  if (!interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
-    await interaction.reply({
-      content: "⛔ You need **Administrator** permission to use this command.",
+  // Safety check
+  if (
+    !interaction.memberPermissions.has(
+      PermissionFlagsBits.Administrator
+    )
+  ) {
+    return interaction.reply({
+      content:
+        "⛔ You need Administrator permission to use this command.",
       flags: MessageFlags.Ephemeral,
     });
-    return;
   }
 
-  // Defer immediately — two DB operations follow and must not hit Discord's 3s timeout
-  await interaction.deferReply();
+  await interaction.deferReply({
+    flags: MessageFlags.Ephemeral,
+  });
 
-  const targetUser = interaction.options.getUser("member", true);
+  const targetUser = interaction.options.getUser(
+    "member",
+    true
+  );
 
-  // Run both DB operations concurrently — check existence then delete
-  const hadSubmission = await hasUserSubmitted(targetUser.id);
-  await deleteUserFeedback(targetUser.id);
+  const guildId = interaction.guildId;
+
+  const hadSubmission = await hasSubmittedFeedback(
+    guildId,
+    targetUser.id
+  );
+
+  if (hadSubmission) {
+    await deleteUserFeedback(
+      guildId,
+      targetUser.id
+    );
+  }
 
   const embed = new EmbedBuilder()
     .setTitle("🔄 Feedback Reset")
     .setColor(0x5865f2)
-    .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+    .setThumbnail(
+      targetUser.displayAvatarURL({
+        dynamic: true,
+      })
+    )
     .addFields(
       {
         name: "👤 Member",
@@ -45,20 +71,28 @@ async function handleResetCommand(interaction) {
         inline: true,
       },
       {
-        name: "📋 Previous Submission",
-        value: hadSubmission ? "✅ Found & deleted" : "❌ None on record",
+        name: "📋 Status",
+        value: hadSubmission
+          ? "✅ Feedback removed"
+          : "❌ No feedback found",
         inline: true,
       }
     )
     .setDescription(
       hadSubmission
-        ? `<@${targetUser.id}> can now submit a fresh feedback review.`
-        : `<@${targetUser.id}> had no existing feedback — nothing to reset.`
+        ? `${targetUser} can now submit feedback again.`
+        : `${targetUser} has not submitted feedback in this server.`
     )
-    .setFooter({ text: `Reset by ${interaction.user.tag}` })
+    .setFooter({
+      text: `Reset by ${interaction.user.tag}`,
+    })
     .setTimestamp();
 
-  await interaction.editReply({ embeds: [embed] });
+  await interaction.editReply({
+    embeds: [embed],
+  });
 }
 
-module.exports = { handleResetCommand };
+module.exports = {
+  handleResetCommand,
+};
