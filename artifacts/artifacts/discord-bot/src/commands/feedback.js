@@ -1,14 +1,14 @@
 /**
  * commands/feedback.js
  *
- * Handles the /feedback slash command and its helper functions.
+ * Permanent Feedback System
  *
  * Features:
- * • Anyone can click the feedback panel.
- * • Each user may submit feedback only once per server.
- * • Selecting a star opens a feedback modal.
- * • Feedback is stored in PostgreSQL.
- * • The feedback panel is deleted after submission or skip.
+ * • Admins create one permanent feedback panel using /feedback.
+ * • Anyone can click the panel.
+ * • Each member can submit feedback only once per server.
+ * • Feedback is saved to PostgreSQL.
+ * • Reviews are posted to the configured feedback channel.
  */
 
 const {
@@ -19,6 +19,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
 
@@ -41,21 +42,12 @@ const REASON_INPUT_ID = "leave_reason";
 // ─────────────────────────────────────────────────────────────
 
 const STAR_LABELS = {
-  1: "1⭐",
-  2: "2⭐",
-  3: "3⭐",
-  4: "4⭐",
-  5: "5⭐",
+  1: "⭐",
+  2: "⭐⭐",
+  3: "⭐⭐⭐",
+  4: "⭐⭐⭐⭐",
+  5: "⭐⭐⭐⭐⭐",
 };
-
-// ─────────────────────────────────────────────────────────────
-// Active feedback panels
-// Stores:
-// messageId -> { channelId }
-// Used only so the original panel can be deleted later.
-// ─────────────────────────────────────────────────────────────
-
-const sessions = new Map();
 
 // ─────────────────────────────────────────────────────────────
 // Embed Builders
@@ -63,58 +55,19 @@ const sessions = new Map();
 
 function buildFeedbackEmbed() {
   return new EmbedBuilder()
-    .setTitle("Before You Leave...")
+    .setTitle("🌟 Server Feedback")
+    .setColor(0x5865F2)
     .setDescription(
-      "Please rate the server and tell us what could be improved.\n\n" +
-      "Click a star rating below or press **Skip**."
-    )
-    .setColor(0x5865f2)
-    .setFooter({
-      text: "Your feedback helps us improve the community.",
-    })
-    .setTimestamp();
-}
-
-function buildResultEmbed(user, stars, reason) {
-  return new EmbedBuilder()
-    .setTitle("📋 New Server Feedback")
-    .setColor(starColor(stars))
-    .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-    .addFields(
-      {
-        name: "👤 User",
-        value: `${user.tag} (<@${user.id}>)`,
-        inline: true,
-      },
-      {
-        name: "⭐ Rating",
-        value: STAR_LABELS[stars],
-        inline: true,
-      },
-      {
-        name: "💬 Reason",
-        value: reason,
-      }
+      [
+        "Your feedback helps us improve our community.",
+        "",
+        "Please choose a star rating below and tell us what you liked or what could be improved.",
+        "",
+        "**Each member can submit feedback once per server.**",
+      ].join("\n")
     )
     .setFooter({
-      text: `User ID: ${user.id}`,
-    })
-    .setTimestamp();
-}
-
-function buildCompletionEmbed(user) {
-  return new EmbedBuilder()
-    .setColor(0xf1c40f)
-    .setAuthor({
-      name: "Feedback Submitted",
-      iconURL: user.displayAvatarURL({ dynamic: true }),
-    })
-    .setDescription(
-      `🌟 **${user.username}** has successfully submitted feedback.\n\nThank you for helping improve our community!`
-    )
-    .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-    .setFooter({
-      text: "We appreciate every member ❤️",
+      text: "Thank you for supporting our community ❤️",
     })
     .setTimestamp();
 }
@@ -126,80 +79,83 @@ function starColor(stars) {
     3: 0xfee75c,
     4: 0x57f287,
     5: 0x1abc9c,
-  }[stars] ?? 0x5865f2;
+  }[stars] ?? 0x5865F2;
+}
+
+function buildResultEmbed(user, stars, reason) {
+  return new EmbedBuilder()
+    .setTitle("📋 New Feedback")
+    .setColor(starColor(stars))
+    .setThumbnail(user.displayAvatarURL())
+    .addFields(
+      {
+        name: "👤 User",
+        value: `${user.tag}\n<@${user.id}>`,
+        inline: true,
+      },
+      {
+        name: "⭐ Rating",
+        value: STAR_LABELS[stars],
+        inline: true,
+      },
+      {
+        name: "💬 Feedback",
+        value: reason,
+      }
+    )
+    .setFooter({
+      text: `User ID: ${user.id}`,
+    })
+    .setTimestamp();
 }
 
 // ─────────────────────────────────────────────────────────────
-// Components
+// Component Builders
 // ─────────────────────────────────────────────────────────────
 
 function buildRatingRows() {
-  const starRow = new ActionRowBuilder();
+  const row1 = new ActionRowBuilder();
 
-  for (let stars = 1; stars <= 5; stars++) {
-    starRow.addComponents(
+  for (let i = 1; i <= 5; i++) {
+    row1.addComponents(
       new ButtonBuilder()
-        .setCustomId(`${STAR_BUTTON_PREFIX}${stars}`)
-        .setLabel(STAR_LABELS[stars])
+        .setCustomId(`${STAR_BUTTON_PREFIX}${i}`)
+        .setLabel(STAR_LABELS[i])
         .setStyle(ButtonStyle.Primary)
     );
   }
 
-  const skipRow = new ActionRowBuilder().addComponents(
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(SKIP_BUTTON_ID)
       .setLabel("Skip")
-      .setStyle(ButtonStyle.Danger)
+      .setStyle(ButtonStyle.Secondary)
   );
 
-  return [starRow, skipRow];
+  return [row1, row2];
 }
 
 function buildFeedbackModal(stars, messageId) {
   const modal = new ModalBuilder()
     .setCustomId(`${MODAL_PREFIX}${stars}_${messageId}`)
-    .setTitle(`${STAR_LABELS[stars]} — Share Your Feedback`);
+    .setTitle(`${STAR_LABELS[stars]} Feedback`);
 
-  const reasonInput = new TextInputBuilder()
+  const input = new TextInputBuilder()
     .setCustomId(REASON_INPUT_ID)
-    .setLabel("Why are you leaving the server?")
-    .setStyle(TextInputStyle.Paragraph)
+    .setLabel("Tell us about your experience")
     .setPlaceholder(
-      "Tell us what could be improved..."
+      "What did you like? What could we improve?"
     )
+    .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
     .setMinLength(10)
     .setMaxLength(1000);
 
   modal.addComponents(
-    new ActionRowBuilder().addComponents(reasonInput)
+    new ActionRowBuilder().addComponents(input)
   );
 
   return modal;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Delete Feedback Panel
-// ─────────────────────────────────────────────────────────────
-
-async function deletePromptMessage(client, messageId) {
-  const session = sessions.get(messageId);
-
-  if (!session) return;
-
-  sessions.delete(messageId);
-
-  try {
-    const channel = await client.channels.fetch(session.channelId);
-
-    if (!channel?.isTextBased()) return;
-
-    const message = await channel.messages.fetch(messageId);
-
-    await message.delete();
-  } catch {
-    // Ignore if message already deleted.
-  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -207,26 +163,21 @@ async function deletePromptMessage(client, messageId) {
 // ─────────────────────────────────────────────────────────────
 
 async function handleFeedbackCommand(interaction) {
-  const alreadySubmitted = await hasSubmittedFeedback(
-    interaction.guild.id,
-    interaction.user.id
-  );
-
-  if (alreadySubmitted) {
+  // Only administrators can create the feedback panel
+  if (
+    !interaction.memberPermissions.has(
+      PermissionFlagsBits.Administrator
+    )
+  ) {
     return interaction.reply({
-      content: "✅ You have already submitted feedback for this server.",
+      content: "⛔ Only administrators can create the feedback panel.",
       flags: MessageFlags.Ephemeral,
     });
   }
 
-  const reply = await interaction.reply({
+  await interaction.reply({
     embeds: [buildFeedbackEmbed()],
     components: buildRatingRows(),
-    fetchReply: true,
-  });
-
-  sessions.set(reply.id, {
-    channelId: reply.channelId,
   });
 }
 
@@ -240,53 +191,9 @@ async function handleButtonInteraction(interaction) {
     return false;
   }
 
-  const messageId = interaction.message.id;
-  const session = sessions.get(messageId);
-
-  if (!session) {
-    await interaction.reply({
-      content: "⚠️ This feedback panel is no longer active.",
-      flags: MessageFlags.Ephemeral,
-    });
-
-    return true;
-  }
-
-  const alreadySubmitted = await hasSubmittedFeedback(
-    interaction.guild.id,
-    interaction.user.id
-  );
-
-  if (alreadySubmitted) {
-    await interaction.reply({
-      content: "⚠️ You have already submitted feedback for this server.",
-      flags: MessageFlags.Ephemeral,
-    });
-
-    return true;
-  }
-
-  if (customId.startsWith(STAR_BUTTON_PREFIX)) {
-    const stars = Number(
-      customId.replace(STAR_BUTTON_PREFIX, "")
-    );
-
-    await interaction.showModal(
-      buildFeedbackModal(stars, messageId)
-    );
-
-    return true;
-  }
-
+  // Skip button
   if (customId === SKIP_BUTTON_ID) {
-    await interaction.deferUpdate();
-
-    await deletePromptMessage(
-      interaction.client,
-      messageId
-    );
-
-    await interaction.followUp({
+    await interaction.reply({
       content: "Feedback skipped.",
       flags: MessageFlags.Ephemeral,
     });
@@ -294,34 +201,74 @@ async function handleButtonInteraction(interaction) {
     return true;
   }
 
-  return false;
-async function handleModalSubmit(interaction, feedbackChannelId) {
+  // Prevent duplicate feedback
+  const alreadySubmitted = await hasSubmittedFeedback(
+    interaction.guild.id,
+    interaction.user.id
+  );
+
+  if (alreadySubmitted) {
+    await interaction.reply({
+      content:
+        "⚠️ You have already submitted feedback for this server.",
+      flags: MessageFlags.Ephemeral,
+    });
+
+    return true;
+  }
+
+  // Open modal
+  const stars = Number(
+    customId.replace(STAR_BUTTON_PREFIX, "")
+  );
+
+  await interaction.showModal(
+    buildFeedbackModal(
+      stars,
+      interaction.message.id
+    )
+  );
+
+  return true;
+}
+
+async function handleModalSubmit(
+  interaction,
+  feedbackChannelId
+) {
   const { customId } = interaction;
 
   if (!customId.startsWith(MODAL_PREFIX)) {
     return false;
   }
 
-  // Parse modal custom ID
-  const payload = customId.substring(MODAL_PREFIX.length);
+  const payload = customId.substring(
+    MODAL_PREFIX.length
+  );
+
   const splitIndex = payload.indexOf("_");
 
-  const stars = Number(payload.substring(0, splitIndex));
+  const stars = Number(
+    payload.substring(0, splitIndex)
+  );
 
-  const reason = interaction.fields.getTextInputValue(REASON_INPUT_ID);
+  const reason = interaction.fields.getTextInputValue(
+    REASON_INPUT_ID
+  );
+
   const user = interaction.user;
 
-  // Acknowledge interaction immediately
   await interaction.deferReply({
     flags: MessageFlags.Ephemeral,
   });
 
   try {
-    // Prevent duplicate submissions
-    const alreadySubmitted = await hasSubmittedFeedback(
-      interaction.guild.id,
-      user.id
-    );
+    // Double-check duplicate submission
+    const alreadySubmitted =
+      await hasSubmittedFeedback(
+        interaction.guild.id,
+        user.id
+      );
 
     if (alreadySubmitted) {
       return interaction.editReply({
@@ -330,16 +277,20 @@ async function handleModalSubmit(interaction, feedbackChannelId) {
       });
     }
 
-    // Fetch feedback channel
-    const feedbackChannel = await interaction.client.channels.fetch(
-      feedbackChannelId
-    );
+    const feedbackChannel =
+      await interaction.client.channels.fetch(
+        feedbackChannelId
+      );
 
-    if (!feedbackChannel?.isTextBased()) {
-      throw new Error("Feedback channel not found or is not text-based.");
+    if (
+      !feedbackChannel ||
+      !feedbackChannel.isTextBased()
+    ) {
+      throw new Error(
+        "Feedback channel not found."
+      );
     }
 
-    // Save feedback and send embed
     await Promise.all([
       saveFeedback(
         user.id,
@@ -361,11 +312,13 @@ async function handleModalSubmit(interaction, feedbackChannelId) {
     ]);
 
     await interaction.editReply({
-      content: `✅ Thank you! Your ${STAR_LABELS[stars]} feedback has been recorded.`,
+      content: `✅ Thank you! Your ${STAR_LABELS[stars]} feedback has been recorded successfully.`,
     });
-
   } catch (err) {
-    console.error("[feedback] Failed to process feedback:", err);
+    console.error(
+      "[feedback] Failed to save feedback:",
+      err
+    );
 
     await interaction.editReply({
       content:
