@@ -1,9 +1,8 @@
 /**
  * db.js
  *
- * Lightweight PostgreSQL client for the Discord bot.
- * Uses the pg Pool directly (no Drizzle) so this plain-JS CommonJS
- * module can share the same DATABASE_URL as the rest of the workspace.
+ * PostgreSQL database helper for the Discord Feedback Bot.
+ * Uses pg Pool directly (CommonJS).
  */
 
 const { Pool } = require("pg");
@@ -18,31 +17,34 @@ const pool = new Pool({
 });
 
 /**
- * Pre-warm the database connection.
+ * Warm up the database connection.
  */
 async function warmup() {
   try {
     await pool.query("SELECT 1");
-    console.log("✅ DB connection warmed up.");
+    console.log("✅ Database connection established.");
   } catch (err) {
-    console.error("⚠️ DB warm-up failed:", err.message);
+    console.error("⚠️ Failed to connect to PostgreSQL:", err.message);
   }
 }
 
 /**
- * Check whether a user has already submitted feedback in this server.
+ * Check whether a user has already submitted feedback
+ * in a specific server.
  *
- * @param {string} guildId Discord Guild ID
- * @param {string} userId Discord User ID
+ * @param {string} guildId
+ * @param {string} userId
  * @returns {Promise<boolean>}
  */
 async function hasSubmittedFeedback(guildId, userId) {
   const result = await pool.query(
-    `SELECT 1
-     FROM feedback_submissions
-     WHERE guild_id = $1
-       AND user_id = $2
-     LIMIT 1`,
+    `
+    SELECT 1
+    FROM feedback_submissions
+    WHERE guild_id = $1
+      AND user_id = $2
+    LIMIT 1
+    `,
     [guildId, userId]
   );
 
@@ -50,25 +52,28 @@ async function hasSubmittedFeedback(guildId, userId) {
 }
 
 /**
- * Delete a user's feedback for a specific server.
+ * Delete a user's feedback
+ * from a specific server.
  *
- * @param {string} guildId Discord Guild ID
- * @param {string} userId Discord User ID
+ * @param {string} guildId
+ * @param {string} userId
  */
 async function deleteUserFeedback(guildId, userId) {
   await pool.query(
-    `DELETE FROM feedback_submissions
-     WHERE guild_id = $1
-       AND user_id = $2`,
+    `
+    DELETE FROM feedback_submissions
+    WHERE guild_id = $1
+      AND user_id = $2
+    `,
     [guildId, userId]
   );
 }
 
 /**
- * Save a feedback submission.
+ * Save feedback.
  *
- * Duplicate submissions from the same user in the same server
- * are ignored because of the UNIQUE(user_id, guild_id) constraint.
+ * Duplicate feedback is prevented by
+ * UNIQUE(user_id, guild_id).
  *
  * @param {string} userId
  * @param {string} username
@@ -78,35 +83,58 @@ async function deleteUserFeedback(guildId, userId) {
  */
 async function saveFeedback(userId, username, guildId, stars, reason) {
   await pool.query(
-    `INSERT INTO feedback_submissions
+    `
+    INSERT INTO feedback_submissions
       (user_id, username, guild_id, stars, reason)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (user_id, guild_id) DO NOTHING`,
+    VALUES
+      ($1, $2, $3, $4, $5)
+    ON CONFLICT (user_id, guild_id)
+    DO NOTHING
+    `,
     [userId, username, guildId, stars, reason]
   );
 }
 
 /**
- * Get overall feedback statistics.
+ * Get feedback statistics.
+ *
+ * If guildId is supplied,
+ * returns statistics for that server only.
+ *
+ * @param {string|null} guildId
  */
-async function getFeedbackStats() {
+async function getFeedbackStats(guildId = null) {
+  const params = [];
+  let where = "";
+
+  if (guildId) {
+    where = "WHERE guild_id = $1";
+    params.push(guildId);
+  }
+
   const summaryRes = await pool.query(
-    `SELECT
-        COUNT(*)::int AS total,
-        ROUND(AVG(stars)::numeric, 2) AS average
-     FROM feedback_submissions`
+    `
+    SELECT
+      COUNT(*)::int AS total,
+      ROUND(AVG(stars)::numeric, 2) AS average
+    FROM feedback_submissions
+    ${where}
+    `,
+    params
   );
 
   const breakdownRes = await pool.query(
-    `SELECT
-        stars,
-        COUNT(*)::int AS count
-     FROM feedback_submissions
-     GROUP BY stars
-     ORDER BY stars`
+    `
+    SELECT
+      stars,
+      COUNT(*)::int AS count
+    FROM feedback_submissions
+    ${where}
+    GROUP BY stars
+    ORDER BY stars
+    `,
+    params
   );
-
-  const { total, average } = summaryRes.rows[0];
 
   const breakdown = {
     1: 0,
@@ -121,50 +149,75 @@ async function getFeedbackStats() {
   }
 
   return {
-    total,
-    average: average ? Number(average) : 0,
+    total: summaryRes.rows[0].total,
+    average: summaryRes.rows[0].average
+      ? Number(summaryRes.rows[0].average)
+      : 0,
     breakdown,
   };
 }
 
 /**
  * Get leaderboard.
+ *
+ * If limit is null,
+ * returns every submission.
+ *
+ * @param {string} guildId
+ * @param {number|null} limit
  */
-async function getLeaderboard(limit = 10) {
+async function getLeaderboard(guildId, limit = null) {
+  const baseQuery = `
+    SELECT
+      user_id,
+      username,
+      stars,
+      reason,
+      created_at
+    FROM feedback_submissions
+    WHERE guild_id = $1
+    ORDER BY
+      stars DESC,
+      created_at ASC
+  `;
+
+  if (limit == null) {
+    const result = await pool.query(baseQuery, [guildId]);
+    return result.rows;
+  }
+
   const result = await pool.query(
-    `SELECT
-        user_id,
-        username,
-        stars,
-        reason,
-        created_at
-     FROM feedback_submissions
-     ORDER BY stars DESC, created_at ASC
-     LIMIT $1`,
-    [limit]
+    `${baseQuery}
+     LIMIT $2`,
+    [guildId, limit]
   );
 
   return result.rows;
 }
 
 /**
- * Get one user's feedback.
+ * Get one user's feedback
+ * for a specific server.
  *
+ * @param {string} guildId
  * @param {string} userId
  * @returns {Promise<object|null>}
  */
-async function getUserFeedback(userId) {
+async function getUserFeedback(guildId, userId) {
   const result = await pool.query(
-    `SELECT
-        user_id,
-        username,
-        stars,
-        reason,
-        created_at
-     FROM feedback_submissions
-     WHERE user_id = $1
-     LIMIT 1`,
-    [userId]
+    `
+    SELECT
+      user_id,
+      username,
+      stars,
+      reason,
+      created_at
+    FROM feedback_submissions
+    WHERE guild_id = $1
+      AND user_id = $2
+    LIMIT 1
+    `,
+    [guildId, userId]
   );
 
   return result.rows[0] ?? null;
