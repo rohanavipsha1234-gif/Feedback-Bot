@@ -1,29 +1,85 @@
 /**
  * guild-config.js
  *
- * Maps each Discord server (guild) the bot is in to its feedback channel.
- * Add a new entry here whenever you invite the bot to a new server.
+ * Per-server configuration.
+ *
+ * Simply add a new server below when inviting the bot.
  *
  * Format:
- *   "<GUILD_ID>": "<FEEDBACK_CHANNEL_ID>"
+ *
+ * "<GUILD_ID>": {
+ *     feedbackChannel: "<CHANNEL_ID>",
+ *     completionChannel: "<CHANNEL_ID>",
+ * }
  */
 
 const GUILD_CONFIGS = {
-  // Server 1
-  "1490917538014691459": "1520298730031415366",
 
-  // Server 2
-  "1296182525034762240": "1530996665463472359",
+  //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Sasaki Community
+  //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  "1430467213827244167": {
+    feedbackChannel: "1520298730031415366",
+    completionChannel: "1520299342316044448",
+  },
+
+  //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Another Server
+  //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  "1296182525034762240": {
+    feedbackChannel: "1530996665463472359",
+    completionChannel: "1530996147764592761",
+  },
+  
+  //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Another Server
+  //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  "1490917538014691459": {
+    feedbackChannel: "1505451145919860746",
+    completionChannel: "1505451145919860746",
+  },
+
+
 };
 
 /**
- * Get the feedback channel ID for a given guild.
- * Falls back to the FEEDBACK_CHANNEL_ID env var for single-server setups.
+ * Get the full configuration for a guild.
+ *
  * @param {string} guildId
- * @returns {string|null}
+ * @returns {{
+ *   feedbackChannel: string|null,
+ *   completionChannel: string|null,
+ * }}
  */
-function getFeedbackChannelId(guildId) {
-  return GUILD_CONFIGS[guildId] ?? process.env.FEEDBACK_CHANNEL_ID ?? null;
+function getGuildConfig(guildId) {
+  return (
+    GUILD_CONFIGS[guildId] ?? {
+      feedbackChannel: process.env.FEEDBACK_CHANNEL_ID ?? null,
+      completionChannel: process.env.COMPLETION_CHANNEL_ID ?? null,
+    }
+  );
 }
 
-module.exports = { GUILD_CONFIGS, getFeedbackChannelId };
+/**
+ * Returns only the feedback channel.
+ */
+function getFeedbackChannelId(guildId) {
+  return getGuildConfig(guildId).feedbackChannel;
+}
+
+/**
+ * Returns the completion message channel.
+ */
+function getCompletionChannelId(guildId) {
+  return getGuildConfig(guildId).completionChannel;
+}
+
+module.exports = {
+  GUILD_CONFIGS,
+  getGuildConfig,
+  getFeedbackChannelId,
+  getCompletionChannelId,
+};
