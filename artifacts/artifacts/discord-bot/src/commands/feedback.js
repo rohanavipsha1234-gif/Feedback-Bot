@@ -114,25 +114,26 @@ function buildResultEmbed(user, stars, reason) {
 // ─────────────────────────────────────────────────────────────
 
 function buildRatingRows() {
-  const row1 = new ActionRowBuilder();
+  const starRow = new ActionRowBuilder();
 
-  for (let i = 1; i <= 5; i++) {
-    row1.addComponents(
+  for (let stars = 1; stars <= 5; stars++) {
+    starRow.addComponents(
       new ButtonBuilder()
-        .setCustomId(`${STAR_BUTTON_PREFIX}${i}`)
-        .setLabel(STAR_LABELS[i])
+        .setCustomId(`${STAR_BUTTON_PREFIX}${stars}`)
+        .setEmoji("⭐")
+        .setLabel(`${stars}`)
         .setStyle(ButtonStyle.Primary)
     );
   }
 
-  const row2 = new ActionRowBuilder().addComponents(
+  const skipRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(SKIP_BUTTON_ID)
       .setLabel("Skip")
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Danger)
   );
 
-  return [row1, row2];
+  return [starRow, skipRow];
 }
 
 function buildFeedbackModal(stars, messageId) {
